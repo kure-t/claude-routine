@@ -464,6 +464,413 @@ import data from './data.json' with { type: 'json' };
 
 ---
 
+## 5. x-win: Node からウィンドウ情報を取得する
+
+**原文リンク:** [x-win on GitHub](https://github.com/miniben-90/x-win)
+
+### ① 目的・問題意識
+
+デスクトップアプリや開発ツールを Node.js で作る際、現在アクティブなウィンドウや開いているウィンドウの情報（タイトル、位置、サイズ、プロセス情報）をプログラムから取得したいケースがある。従来は OS ごとに異なるネイティブ API を叩く必要があり、クロスプラットフォーム対応が困難だった。`x-win` はこれを Rust + napi-rs で抽象化し、Windows / macOS / Linux で統一した API を提供する。
+
+### ② 具体的な技術詳細
+
+#### インストール
+
+```bash
+npm i @miniben90/x-win
+```
+
+#### 基本的な使い方
+
+```javascript
+import { activeWindow, openWindows } from '@miniben90/x-win';
+
+// 現在アクティブなウィンドウの情報を取得
+const win = activeWindow();
+console.log(win);
+// {
+//   id: 12345,
+//   title: 'Visual Studio Code',
+//   processPath: '/usr/bin/code',
+//   processName: 'code',
+//   pid: 9876,
+//   os: 'linux',
+//   position: { x: 0, y: 0, width: 1920, height: 1080 },
+//   memoryUsage: 512000,
+// }
+
+// 全ウィンドウの一覧取得
+const windows = openWindows();
+windows.forEach(w => console.log(w.title));
+```
+
+#### 非同期版
+
+```javascript
+import { activeWindowAsync, openWindowsAsync } from '@miniben90/x-win';
+
+const win = await activeWindowAsync();
+const windows = await openWindowsAsync();
+```
+
+#### アクティブウィンドウの変化を監視（100ms ポーリング）
+
+```javascript
+import { subscribeActiveWindow } from '@miniben90/x-win';
+
+const unsubscribe = subscribeActiveWindow((win) => {
+  console.log('アクティブウィンドウが変わりました:', win.title);
+});
+
+// 監視停止
+setTimeout(() => unsubscribe(), 10000);
+```
+
+#### アイコン取得
+
+```javascript
+import { getIcon } from '@miniben90/x-win';
+
+const win = activeWindow();
+const iconBase64 = getIcon(win.id); // base64 PNG
+```
+
+#### ブラウザの URL 取得（macOS / Windows のみ）
+
+```javascript
+const win = activeWindow();
+if (win.url) {
+  console.log('現在開いているURL:', win.url);
+}
+```
+
+#### サポートプラットフォーム
+
+| OS | 条件 |
+|----|------|
+| Windows 10+ | フル対応、ブラウザ URL 取得可能 |
+| macOS 10.6+ | Catalina 以降は画面収録権限が必要 |
+| Linux (X11) | `libxcb-dev` 等が必要 |
+| Linux (Wayland/GNOME) | `installExtension()` で拡張機能をインストール |
+
+### ③ なぜ効果的か
+
+- Rust + napi-rs によりネイティブ性能でウィンドウ情報を取得
+- 単一の npm パッケージで Windows / macOS / Linux に対応
+- `subscribeActiveWindow` により Electron 不要で時間計測ツールや集中管理ツールが作れる
+
+---
+
+## 6. DocMD: Markdown から本番対応ドキュメントサイトを生成
+
+**原文リンク:** [docmd.io](https://docmd.io/) / [GitHub](https://github.com/docmd-io/docmd)
+
+### ① 目的・問題意識
+
+Docusaurus や VitePress は高機能だが、設定が複雑でバンドルサイズが大きくなりがち。`DocMD` は「Markdown を書くだけ」で SEO 対応・多言語・バージョン管理・オフライン検索付きの静的ドキュメントサイトを生成する。クライアント JS は約 18KB のみで Lighthouse スコア 100 を達成する。
+
+### ② 具体的な技術詳細
+
+#### インストールとクイックスタート
+
+```bash
+npm install -g @docmd/core
+
+# 開発サーバー起動（http://localhost:3000）
+docmd dev
+
+# 本番ビルド
+docmd build
+
+# 既存ドキュメントを移行（Docusaurus / VitePress / MkDocs 対応）
+docmd migrate
+```
+
+#### 最小構成（設定ファイル不要）
+
+```
+my-docs/
+├── docs/
+│   ├── index.md
+│   └── guide.md
+└── package.json
+```
+
+`npx @docmd/core dev` だけで動く。
+
+#### 設定ファイル（オプション）
+
+```javascript
+// docmd.config.js
+const { defineConfig } = require('@docmd/core');
+
+module.exports = defineConfig({
+  title: 'My Project Docs',
+  url: 'https://docs.myproject.com',
+  versions: {
+    current: 'v2',
+    all: [
+      { id: 'v2', dir: 'docs' },
+      { id: 'v1', dir: 'docs-v1' },
+    ],
+  },
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en', 'ja', 'de', 'fr'],
+  },
+});
+```
+
+#### デプロイ設定の自動生成
+
+```bash
+# Docker 用 Dockerfile + nginx.conf を生成
+docmd deploy --docker
+# ✓ Generated Dockerfile
+# ✓ Generated nginx.conf
+# → docker build -t docs .
+
+# Nginx 単体
+docmd deploy --nginx
+
+# Caddy
+docmd deploy --caddy
+```
+
+#### プログラマティック API
+
+```javascript
+const { build } = require('@docmd/core');
+await build('./docmd.config.js', { isDev: false });
+```
+
+#### 主な機能
+
+| 機能 | 詳細 |
+|------|------|
+| 検索 | オフラインのファジー全文検索（ロケール別インデックス） |
+| i18n | ロケール優先 URL、翻訳済み UI 文字列 |
+| バージョン切替 | docs-v1 / docs-v2 など複数ディレクトリ対応 |
+| AI コンテキスト | `llms.txt` を自動生成 |
+| プラグイン | Mermaid 図、PWA、LaTeX 数式、アナリティクス |
+
+### ③ なぜ効果的か
+
+- React/Vue 不要で **クライアント JS が約 18KB** のみ、高速表示
+- `docmd deploy --docker` 一発で本番デプロイ設定が揃う
+- Docusaurus 等からの **自動マイグレーション** コマンドで移行コストが低い
+
+---
+
+## 7. TinyTTS: 3.4MB の軽量英語テキスト読み上げ
+
+**原文リンク:** [GitHub - tronghieuit/tiny-tts](https://github.com/tronghieuit/tiny-tts)
+
+### ① 目的・問題意識
+
+テキスト読み上げ (TTS) には通常クラウド API（Google Cloud TTS、AWS Polly 等）か大型モデルが必要で、オフライン・エッジ環境での利用が難しかった。`TinyTTS` は ONNX Runtime を使った約 3.4MB（FP16）の超軽量モデルで、CPU のみで **約 53倍リアルタイム** の速度で英語音声を合成する。
+
+### ② 具体的な技術詳細
+
+#### 仕様
+
+| 項目 | 値 |
+|------|-----|
+| モデルサイズ | ~3.4MB（FP16 ONNX） |
+| パラメータ数 | ~1.6M |
+| サンプリングレート | 44.1 kHz |
+| 処理速度 | ~53倍リアルタイム（CPU） |
+| ライセンス | Apache 2.0 |
+
+#### Node.js インストールと使用例
+
+```bash
+npm install tiny-tts
+```
+
+```javascript
+const TinyTTS = require('tiny-tts');
+
+const tts = new TinyTTS();
+
+await tts.speak('Hello, this is Node Weekly.', {
+  outputPath: 'output.wav',
+  speed: 1.0,
+  speaker: 'MALE',
+});
+```
+
+#### Python でも同じモデルを使用可能
+
+```python
+from tiny_tts import TinyTTS
+
+tts = TinyTTS()
+tts.speak("Hello, this is a test.", output_path="hello.wav", speed=1.5)
+```
+
+#### CLI
+
+```bash
+tiny-tts --text "Sample text" --output output.wav --speed 1.0
+```
+
+#### アーキテクチャ
+
+- Grapheme-to-Phoneme (G2P) 変換 → CMU 発音辞書（123,463 エントリ）
+- Viterbi アライメント
+- エンドツーエンド音声合成（ボコーダー不要）
+- ONNX Runtime で実行（CPU のみで動作）
+
+### ③ なぜ効果的か
+
+- **3.4MB** という極小サイズで IoT・エッジデバイスにデプロイ可能
+- **クラウド API 不要**のためオフライン環境やコスト削減に有効
+- Node.js と Python で同一モデルを共有できる
+
+---
+
+## 8. Marked.js 18.0: 高速 Markdown パーサーが TypeScript 6 対応
+
+**原文リンク:** [marked on npm](https://www.npmjs.com/package/marked) / [GitHub Releases](https://github.com/markedjs/marked/releases)
+
+### ① 目的・問題意識
+
+`marked` はブラウザ・サーバー両対応の高速 Markdown パーサーとして広く使われており（12,000+ 依存パッケージ）、v18.0.0 では TypeScript 6 への対応と、パース精度に関わるバグ修正が行われた。
+
+### ② 具体的な技術詳細
+
+#### インストール
+
+```bash
+npm i marked
+```
+
+#### 基本的な使い方
+
+```javascript
+import { marked } from 'marked';
+
+const html = marked('# Hello World\n\nThis is **marked** v18.');
+console.log(html);
+// <h1>Hello World</h1>
+// <p>This is <strong>marked</strong> v18.</p>
+```
+
+#### v18.0.0 の破壊的変更
+
+**1. ブロックトークン末尾の空行をトリム**
+
+以前はトークンに末尾の空行が含まれていたが、v18.0.0 からトリムされる。カスタムレンダラーやプラグインで末尾の空行に依存していた場合は修正が必要。
+
+**2. TypeScript を v5.9.3 → v6.0.2 にアップグレード**
+
+```bash
+npx tsc --version  # Version 6.0.2
+```
+
+#### v18.0.2 のバグ修正
+
+インデント付きコードブロックと空行の組み合わせで無限ループが発生するバグが修正された。
+
+```markdown
+    indented code block
+
+    (blank line)
+
+    more indented code
+```
+
+#### カスタムレンダラーの例
+
+```javascript
+import { marked, Renderer } from 'marked';
+
+const renderer = new Renderer();
+
+renderer.heading = ({ text, depth }) => {
+  const id = text.toLowerCase().replace(/\s+/g, '-');
+  return `<h${depth} id="${id}">${text}</h${depth}>\n`;
+};
+
+marked.use({ renderer });
+console.log(marked('# Hello World'));
+// <h1 id="hello-world">Hello World</h1>
+```
+
+### ③ なぜ効果的か
+
+- **TypeScript 6 対応**によりモダンな TypeScript プロジェクトで型エラーが出なくなる
+- 末尾空行のトリムにより **パース結果の一貫性** が向上し、プラグイン開発が予測しやすくなる
+- v18.0.2 の無限ループ修正により **本番環境での安全性** が向上
+
+---
+
+## 9. Node.js リリーススケジュールの進化
+
+**原文リンク:** [Evolving the Node.js Release Schedule](https://nodejs.org/en/blog/announcements/evolving-the-nodejs-release-schedule)
+
+### ① 目的・問題意識
+
+現行の Node.js は年 2 回のメジャーリリース（奇数番 = Current、偶数番 = LTS）を行っているが、奇数番リリースの採用率が低く、同時に複数ラインをメンテするボランティアの負担が大きかった。Node.js 27 (2027年) から年 1 回のリリースモデルに移行する。
+
+### ② 具体的な技術詳細
+
+#### 新しいリリースフロー
+
+```
+Alpha (6ヶ月: 10月〜3月)
+  ↓  semver-major 変更可能・signed タグ付きリリース
+Current (6ヶ月: 4月〜10月)
+  ↓  安定化フェーズ
+LTS (30ヶ月)
+  ↓
+EOL
+```
+
+#### タイムライン例（Node.js 27）
+
+| マイルストーン | 日付 |
+|---------------|------|
+| Alpha 開始 | 2026年10月 |
+| 27.0.0 リリース | 2027年4月 |
+| LTS 昇格 | 2027年10月 |
+| End of Life | 2030年4月 |
+
+#### Alpha チャンネルの仕様
+
+```bash
+# Alpha はセマンティックバージョンのプレリリース形式
+# 例: 27.0.0-alpha.1, 27.0.0-alpha.2, ...
+
+npm install node@27.0.0-alpha.1  # ライブラリ作者向けの早期テスト用
+```
+
+- **目的**: 奇数番リリースの代わりに破壊的変更の早期フィードバックを得る
+- **対象**: ライブラリ作者、CI パイプライン（本番環境向けではない）
+- **品質ゲート**: CITGM（Canary in the Goldmine）テストで品質担保
+
+#### 変わらないこと
+
+- LTS のサポート期間（約 30ヶ月）は維持
+- 4月リリース・10月 LTS 昇格のスケジュールは維持
+- V8 採用サイクル（Current リリース時点で約 6ヶ月前の V8）
+
+#### 移行スケジュール
+
+| バージョン | 備考 |
+|-----------|------|
+| Node.js 26 | **現行スケジュール最後のリリース** |
+| Node.js 27 | **新スケジュール最初のリリース**（2027年4月） |
+
+### ③ なぜ効果的か
+
+- **奇数番リリース廃止**により新規参入者の混乱がなくなる
+- **全リリースが LTS** になることで、どのバージョンにアップグレードしても長期サポートが保証される
+- メンテナーの**並行ライン数が減少**しバックポート負担が軽減される
+
+---
+
 ## まとめ
 
 | トピック | 重要度 | アクション |
@@ -472,3 +879,8 @@ import data from './data.json' with { type: 'json' };
 | Node.js 24.15.0 LTS リリース | ★★★ | require(esm) とコンパイルキャッシュを活用する |
 | Moment.js → Temporal 移行ガイド | ★★☆ | 新規コードは Temporal を使い始める |
 | Node.js 20 EOL (2026/4/30) | ★★★ | **今すぐ** Node.js 22 または 24 に移行する |
+| x-win | ★★☆ | デスクトップツール開発に活用する |
+| DocMD | ★★☆ | 新規ドキュメントサイトの選択肢として検討する |
+| TinyTTS | ★★☆ | オフライン TTS が必要な場面で活用する |
+| Marked.js 18.0 | ★★☆ | v18 へアップグレードし無限ループバグを解消する |
+| Node.js リリーススケジュール変更 | ★★★ | Node.js 27 以降は全リリースが LTS になると覚えておく |
